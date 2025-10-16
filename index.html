@@ -1,0 +1,238 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>DoubleTree ABQ – Local Restaurants (All Pins + Legend Top Right + Dropdown)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { width: 100%; height: 100vh; }
+    .legend, .topbar {
+      position: absolute; z-index: 1000; background: rgba(255,255,255,0.98);
+      padding: 8px 10px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial;
+      font-size: 13px;
+    }
+    .topbar { top: 12px; right: 10px; }
+    .legend { top: 70px; right: 10px; width: 240px; }
+    .legend h4 { margin: 0 0 6px 0; font-size: 13px; }
+    .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+    .downtown { background:#2b8a3e; }
+    .oldtown { background:#d9480f; }
+    .nobhill { background:#1c7ed6; }
+    .drive { background:#7048e8; }
+    .btn {
+      display:inline-block; padding:8px 10px; border-radius: 8px; text-decoration:none; color:#000; 
+      font-weight:700; font-size: 12px; line-height: 1; margin: 0 6px 6px 0; box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+    .btn.gmaps { background:#ffb703; color:#000; }
+    .btn.secondary { background:#2196f3; color:#000; }
+    .btn.loc { background:#0ca678; color:#000; }
+    .btn.center { background:#e63946; color:#000; }
+    .leaflet-popup-content { margin: 10px 10px 6px 10px; }
+    .popup-name { font-weight: 800; margin-bottom: 4px; }
+    .popup-meta { font-size: 12px; margin-bottom: 8px; }
+    .popup-actions a { margin-right: 6px; }
+    .select-wrap { margin-top: 8px; }
+    select { width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px solid #ccc; font-size: 13px; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="topbar">
+  <a id="hotelLink" class="btn gmaps" target="_blank" rel="noopener">Open Hotel in Google Maps</a>
+  <a id="locateBtn" class="btn loc" href="#" onclick="locateMe(); return false;">Use My Location</a>
+  <a id="centerBtn" class="btn center" href="#" onclick="centerHotel(); return false;">Center on Hotel</a>
+</div>
+
+<div class="legend">
+  <h4>Legend</h4>
+  <div><span class="dot downtown"></span>Downtown (0–1 mi)</div>
+  <div><span class="dot oldtown"></span>Old Town & Sawmill (1–3 mi)</div>
+  <div><span class="dot nobhill"></span>Nob Hill & North Valley (3–5 mi)</div>
+  <div><span class="dot drive"></span>Worth the Drive (5+ mi)</div>
+  <div class="select-wrap">
+    <label for="jumpSelect" style="display:block; margin-bottom:4px; font-weight:700;">Quick jump to restaurant</label>
+    <select id="jumpSelect">
+      <option value="">Select a restaurant…</option>
+    </select>
+  </div>
+</div>
+
+<script>
+var map = L.map('map', { tap: true }).setView([35.088451, -106.649013], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+function haversineMiles(a, b) {
+  var toRad = function(x){ return x * Math.PI / 180; };
+  var R = 6371e3;
+  var phi1 = toRad(a.lat), phi2 = toRad(b.lat);
+  var dphi = toRad(b.lat - a.lat);
+  var dl = toRad(b.lng - a.lng);
+  var s = Math.sin(dphi/2) * Math.sin(dphi/2) +
+          Math.cos(phi1) * Math.cos(phi2) *
+          Math.sin(dl/2) * Math.sin(dl/2);
+  var c = 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
+  return (R * c) / 1609.344;
+}
+
+const catColor = { "Downtown": "#2b8a3e", "OldTown": "#d9480f", "NobHill": "#1c7ed6", "Drive": "#7048e8" };
+
+function gmapsLinkLatLng(lat, lng) { return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`; }
+function dirLinkLatLng(lat, lng) { return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`; }
+
+const hotel = {
+  name: "DoubleTree by Hilton Albuquerque",
+  address: "201 Marquette Ave NW, Albuquerque, NM 87102",
+  lat: 35.088451, lng: -106.649013
+};
+document.getElementById('hotelLink').href = gmapsLinkLatLng(hotel.lat, hotel.lng);
+
+const starSVG = encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 48 48">
+    <path d="M24 2l6.9 14 15.1 2.2-10.9 10.6 2.6 15.1L24 36.8 10.3 43.9l2.6-15.1L2 18.2 17.1 16 24 2z" fill="#ffb703" stroke="#000" stroke-width="2" />
+  </svg>
+`);
+const hotelIcon = L.icon({
+  iconUrl: "data:image/svg+xml;charset=UTF-8," + starSVG,
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+  popupAnchor: [0, -18]
+});
+
+function centerHotel() {
+  map.setView([hotel.lat, hotel.lng], 16);
+}
+
+// All restaurants (26 total)
+const places = [
+  // Downtown (0–1 mi)
+  {name:"The Artichoke Café", address:"424 Central Ave SE, Albuquerque, NM 87102", category:"Downtown", lat:35.0818, lng:-106.6448},
+  {name:"MAS Tapas y Vino (Hotel Andaluz)", address:"125 2nd St NW, Albuquerque, NM 87102", category:"Downtown", lat:35.0846, lng:-106.6491},
+  {name:"Slate Street Café", address:"515 Slate Ave NW, Albuquerque, NM 87102", category:"Downtown", lat:35.0902, lng:-106.6532},
+  {name:"Marble Brewery", address:"111 Marble Ave NW, Albuquerque, NM 87102", category:"Downtown", lat:35.0940, lng:-106.6490},
+  {name:"Range Café Downtown", address:"320 Central Ave SE, Albuquerque, NM 87102", category:"Downtown", lat:35.0830, lng:-106.6465},
+  {name:"505 Central Food Hall", address:"505 Central Ave NW, Albuquerque, NM 87102", category:"Downtown", lat:35.0846, lng:-106.6523},
+
+  // Old Town & Sawmill (1–3 mi)
+  {name:"Cocina Azul (Original)", address:"1134 Mountain Rd NW, Albuquerque, NM 87102", category:"OldTown", lat:35.0955, lng:-106.6569},
+  {name:"Kosmos Restaurant & Astropub", address:"1715 5th St NW, Albuquerque, NM 87102", category:"OldTown", lat:35.1001, lng:-106.6507},
+  {name:"Monte Carlo Steakhouse", address:"3916 Central Ave SW, Albuquerque, NM 87105", category:"OldTown", lat:35.0773, lng:-106.6809},
+  {name:"Laguna Burger (Old Town)", address:"2400 12th St NW, Albuquerque, NM 87104", category:"OldTown", lat:35.1074, lng:-106.6596},
+  {name:"Indian Pueblo Kitchen", address:"2401 12th St NW, Albuquerque, NM 87104", category:"OldTown", lat:35.1079, lng:-106.6598},
+  {name:"Sawmill Market", address:"1909 Bellamah Ave NW, Albuquerque, NM 87104", category:"OldTown", lat:35.1040, lng:-106.6641},
+  {name:"Mary & Tito’s Café", address:"2711 4th St NW, Albuquerque, NM 87107", category:"OldTown", lat:35.1164, lng:-106.6487},
+
+  // Nob Hill & North Valley (3–5 mi)
+  {name:"Frontier Restaurant", address:"2400 Central Ave SE, Albuquerque, NM 87106", category:"NobHill", lat:35.0817, lng:-106.6197},
+  {name:"M’tucci’s Bar Roma", address:"3222 Central Ave SE, Albuquerque, NM 87106", category:"NobHill", lat:35.0792, lng:-106.6056},
+  {name:"Annapurna’s World Vegetarian Café", address:"2201 Silver Ave SE, Albuquerque, NM 87106", category:"NobHill", lat:35.0785, lng:-106.6209},
+  {name:"Guava Tree Café", address:"118 Richmond Dr NE, Albuquerque, NM 87106", category:"NobHill", lat:35.0799, lng:-106.6124},
+  {name:"O Ramen", address:"2114 Central Ave SE, Albuquerque, NM 87106", category:"NobHill", lat:35.0819, lng:-106.6278},
+  {name:"Tula’s Kitchen", address:"1825 Central Ave NW, Albuquerque, NM 87104", category:"NobHill", lat:35.0897, lng:-106.6619},
+  {name:"Farm & Table", address:"8917 4th St NW, Albuquerque, NM 87114", category:"NobHill", lat:35.1756, lng:-106.6243},
+  {name:"El Pinto Restaurant & Cantina", address:"10500 4th St NW, Albuquerque, NM 87114", category:"NobHill", lat:35.1978, lng:-106.6231},
+
+  // Worth the Drive (5+ mi)
+  {name:"Los Poblanos Campo Restaurant", address:"4803 Rio Grande Blvd NW, Los Ranchos De Albuquerque, NM 87107", category:"Drive", lat:35.1460, lng:-106.6496},
+  {name:"Sadie’s of New Mexico", address:"6230 4th St NW, Albuquerque, NM 87107", category:"Drive", lat:35.1639, lng:-106.6247},
+  {name:"M’tucci’s Twenty-Five", address:"4939 Pan American Fwy NE, Albuquerque, NM 87109", category:"Drive", lat:35.1368, lng:-106.5904},
+  {name:"Nexus Brewery", address:"4730 Pan American Fwy NE, Albuquerque, NM 87109", category:"Drive", lat:35.1376, lng:-106.5935},
+  {name:"10 3 at the Tram", address:"30 Tramway Rd NE, Albuquerque, NM 87122", category:"Drive", lat:35.1902, lng:-106.4694}
+];
+
+// Hold markers by name for selection/highlight
+const markersByName = {};
+const defaultRadius = 6;
+const highlightRadius = 11;
+
+function resetAllMarkers() {
+  for (const name in markersByName) {
+    const m = markersByName[name];
+    if (m && m.setStyle) {
+      m.setStyle({ radius: defaultRadius, weight: 2, color: m._baseColor, fillColor: m._baseColor, fillOpacity: 0.95 });
+    }
+  }
+}
+
+function addMarkers() {
+  const hotelLatLng = {lat: hotel.lat, lng: hotel.lng};
+  const hotelMarker = L.marker(hotelLatLng, { icon: hotelIcon }).addTo(map).bindPopup(
+    `<div class="popup-name">${hotel.name}</div>
+     <div class="popup-meta">${hotel.address}</div>
+     <div class="popup-actions">
+       <a class="btn gmaps" target="_blank" rel="noopener" href="${gmapsLinkLatLng(hotel.lat, hotel.lng)}">Open in Google Maps</a>
+     </div>`
+  ).bindTooltip("Hotel – DoubleTree", {sticky:true, direction:"top", offset:[0,-18]});
+
+  const bounds = L.latLngBounds([hotelLatLng]);
+
+  for (const p of places) {
+    const base = catColor[p.category] || "#333";
+    const latlng = {lat: p.lat, lng: p.lng};
+    const miles = haversineMiles(hotelLatLng, latlng);
+    const marker = L.circleMarker(latlng, { radius: defaultRadius, color: base, fillColor: base, fillOpacity: 0.95, weight: 2 });
+    marker._baseColor = base; // remember for reset
+    marker.addTo(map);
+    marker.bindPopup(`<div class="popup-name">${p.name}</div>
+      <div class="popup-meta">~${miles.toFixed(1)} mi from hotel<br>${p.address}</div>
+      <div class="popup-actions">
+        <a class="btn secondary" target="_blank" rel="noopener" href="${dirLinkLatLng(p.lat, p.lng)}">Directions</a>
+        <a class="btn gmaps" target="_blank" rel="noopener" href="${gmapsLinkLatLng(p.lat, p.lng)}">Open in Google Maps</a>
+      </div>`);
+    marker.bindTooltip(`${p.name} · ~${miles.toFixed(1)} mi`, {sticky: true});
+    markersByName[p.name] = marker;
+    bounds.extend(latlng);
+  }
+  map.fitBounds(bounds.pad(0.15));
+}
+
+function populateDropdown() {
+  const sel = document.getElementById('jumpSelect');
+  const names = Object.keys(markersByName).sort((a,b) => a.localeCompare(b));
+  for (const n of names) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = n;
+    sel.appendChild(opt);
+  }
+  sel.addEventListener('change', function(){
+    const name = this.value;
+    if (!name) return;
+    const m = markersByName[name];
+    if (!m) return;
+    resetAllMarkers();
+    m.setStyle({ radius: highlightRadius, color: "#000", weight: 3, fillColor: "#ffff00", fillOpacity: 1.0 });
+    m.bringToFront();
+    map.setView(m.getLatLng(), 15);
+    m.openPopup();
+  });
+}
+
+let userMarker = null;
+function locateMe() {
+  if (!navigator.geolocation) {
+    alert("Geolocation not supported.");
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(function(pos){
+    const latlng = {lat: pos.coords.latitude, lng: pos.coords.longitude};
+    if (userMarker) map.removeLayer(userMarker);
+    userMarker = L.circleMarker(latlng, {radius: 7, color:"#0ca678", fillColor:"#0ca678", fillOpacity:0.9, weight:1}).addTo(map);
+    userMarker.bindPopup("You are here").openPopup();
+    map.setView(latlng, 14);
+  }, function(err){ console.warn(err); }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
+}
+
+addMarkers();
+populateDropdown();
+</script>
+</body>
+</html>
