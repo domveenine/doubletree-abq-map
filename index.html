@@ -8,16 +8,14 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <style>
-    :root{
-      --bg:#f7f7f8; --panel:#fff; --text:#111418; --muted:#6b7280; --shadow:0 8px 30px rgba(0,0,0,.08); --radius:14px;
-    }
+    :root{ --bg:#f7f7f8; --panel:#fff; --text:#111418; --muted:#6b7280; --shadow:0 8px 30px rgba(0,0,0,.08); --radius:14px; }
     html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Inter,Roboto,Helvetica,Arial}
     #app{display:grid;grid-template-rows:auto 1fr;height:100vh}
     header{display:flex;align-items:center;gap:.6rem;padding:10px 14px;background:var(--panel);box-shadow:var(--shadow);position:sticky;top:0;z-index:1000}
     .title{font-weight:600}
     #map{height:100%}
     .controls{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:10px;z-index:1001}
-    .card{background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow);padding:10px;min-width:260px;max-width:340px}
+    .card{background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow);padding:10px;min-width:260px;max-width:360px}
     .card h3{margin:0 0 8px 0;font-size:14px;font-weight:600}
     .legend-row{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0}
     .chip{width:12px;height:12px;border-radius:50%;border:1px solid rgba(0,0,0,.1)}
@@ -26,10 +24,15 @@
     .btn{appearance:none;border:1px solid #e5e7eb;background:#fff;border-radius:12px;padding:8px 12px;font-size:13px;cursor:pointer;box-shadow:var(--shadow)}
     .btn.primary{border-color:#dbeafe;background:#f0f7ff;color:#0b63d1}
     .leaflet-control-attribution{font-size:10px;color:var(--muted)}
-    .popup h4{margin:0 0 6px 0;font-size:15px}
-    .popup .meta{font-size:12px;color:var(--muted);margin-bottom:6px}
-    .popup .row{font-size:13px;margin:2px 0}
-    .popup .row strong{display:inline-block;width:72px;color:#374151}
+    .popup{max-width:320px}
+    .popup h4{margin:0 6px 4px 6px;font-size:16px;line-height:1.3}
+    .popup .meta{font-size:12px;color:#6b7280;margin:0 6px 8px 6px}
+    .popup .badge{display:inline-block;font-size:12px;padding:3px 8px;border-radius:999px;border:1px solid #e5e7eb;background:#fafafa;margin:0 6px 8px 6px}
+    .popup .kvs{display:grid;grid-template-columns:88px 1fr;gap:6px 8px;padding:0 6px 6px 6px}
+    .popup .kvs dt{font-size:12px;color:#374151;text-align:right;opacity:.85}
+    .popup .kvs dd{font-size:13px;margin:0}
+    .popup .btns{display:flex;gap:8px;flex-wrap:wrap;padding:8px 6px 4px 6px}
+    .popup .btns a{flex:1 1 140px;text-align:center}
     .hotel-star svg{filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))}
   </style>
 </head>
@@ -45,10 +48,10 @@
       <div class="controls">
         <div class="card">
           <h3>Legend</h3>
-          <div class="legend-row"><span class="chip" style="background:#5b93ff"></span> Walking Downtown (0–1 mi)</div>
-          <div class="legend-row"><span class="chip" style="background:#8bd46a"></span> Short Drive to Old Town (1–3 mi)</div>
-          <div class="legend-row"><span class="chip" style="background:#f3c96b"></span> Quick Adventure (3–5 mi)</div>
-          <div class="legend-row"><span class="chip" style="background:#d89ef9"></span> Worth the Drive (5+ mi)</div>
+          <div class="legend-row"><span class="chip" style="background:#5b93ff"></span> Walking Downtown (0–1 Mile)</div>
+          <div class="legend-row"><span class="chip" style="background:#8bd46a"></span> Beyond the Block (1–3 Miles)</div>
+          <div class="legend-row"><span class="chip" style="background:#f3c96b"></span> Quick Adventure (3–5 Miles)</div>
+          <div class="legend-row"><span class="chip" style="background:#d89ef9"></span> Worth the Drive (5+ Miles)</div>
           <div style="margin-top:8px">
             <select id="placeSelect" class="select">
               <option value="">Quick jump to a restaurant</option>
@@ -66,52 +69,57 @@
   <script>
     // ===== Config =====
     const HOTEL = { name: "DoubleTree by Hilton Downtown Albuquerque", lat: 35.088451, lng: -106.649013 };
-    const INITIAL_ZOOM = 12; // per your request
+    const INITIAL_ZOOM = 15;
+    const FIT_TO_BOUNDS_ON_LOAD = false;
 
     const COLORS = {
-      "Walking Downtown": "#5b93ff",
-      "Short Drive to Old Town": "#8bd46a",
-      "Quick Adventure": "#f3c96b",
-      "Worth the Drive": "#d89ef9"
+      "Walking Downtown (0–1 Mile)": "#5b93ff",
+      "Beyond the Block (1–3 Miles)": "#8bd46a",
+      "Quick Adventure (3–5 Miles)": "#f3c96b",
+      "Worth the Drive (5+ Miles)": "#d89ef9"
     };
 
-    // ===== Data (from your list) =====
+    // ===== Data (updated with Monte Carlo zip fix) =====
     const PLACES = [
-      // Walking Downtown (0–1 mi)
-      { area: "Walking Downtown", name: "My Mom's - Breakfast", address: "500 4th St NW #106", distance: "0.1 mi", phone: "(505) 247-2943", hours: "Mon–Fri 8a-2p" },
-      { area: "Walking Downtown", name: "CHAR (Hotel Andaluz) – American", address: "125 2nd St NW", distance: "0.2 mi", phone: "(505) 242-9080", hours: "Daily 7a–10p" },
-      { area: "Walking Downtown", name: "Oni Ramen – Japanese/New Mexican Fusion", address: "600 Central Ave SW # 100", distance: "0.3 mi", phone: "(505) 503-6722", hours: "Daily 11:30a–8p" },
-      { area: "Walking Downtown", name: "505 Central Food Hall – Food Hall", address: "505 Central Ave NW", distance: "0.3 mi", phone: "Varies by Vendor", hours: "Varies by Vendor | Usually 11a–9p" },
-      { area: "Walking Downtown", name: "Slate Street Café – Café", address: "515 Slate Ave NW", distance: "0.4 mi", phone: "(505) 243-2210", hours: "Mon–Fri 8a–2p, Sat 9a–2p" },
-      { area: "Walking Downtown", name: "Trackor Brewing Company Wells Park – Brewery", address: "1800 4th St NW", distance: "0.4 mi", phone: "(505) 243-6752", hours: "Mon 4–9p, Tue–Thu 2–10p, Fri 2p–12a, Sat 1–11p, Sun 1–10p" },
-      { area: "Walking Downtown", name: "Range Café Downtown – New Mexican", address: "320 Central Ave SE", distance: "0.4 mi", phone: "(505) 243-1440", hours: "Daily 7a–3p" },
-      { area: "Walking Downtown", name: "The Artichoke Café – American", address: "424 Central Ave SE", distance: "0.5 mi", phone: "(505) 243-0200", hours: "Mon–Thu 11a–9p, Fri–Sat 11a–10p" },
-      { area: "Walking Downtown", name: "Marble Brewery – Brewery", address: "111 Marble Ave NW", distance: "0.5 mi", phone: "(505) 243-2739", hours: "Daily 11:30a–10p" },
-      { area: "Walking Downtown", name: "Cocina Azul – New Mexican", address: "1134 Mountain Rd NW", distance: "0.7 mi", phone: "(505) 831-2500", hours: "Daily 9a–8p" },
+      // Walking Downtown (0–1 Mile)
+      { area: "Walking Downtown (0–1 Mile)", name: "My Mom’s – Breakfast", price: "$$", address: "500 4th St NW #106, Albuquerque, NM 87102", distance: "0.1 mi", phone: "(505) 247-2943", hours: "Mon–Fri 8a–2p" },
+      { area: "Walking Downtown (0–1 Mile)", name: "CHAR (Hotel Andaluz) – American", price: "$$$", address: "125 2nd St NW, Albuquerque, NM 87102", distance: "0.2 mi", phone: "(505) 242-9080", hours: "Daily 7a–10p" },
+      { area: "Walking Downtown (0–1 Mile)", name: "Oni Ramen – Japanese / NM Fusion", price: "$$", address: "600 Central Ave SW #100, Albuquerque, NM 87102", distance: "0.3 mi", phone: "(505) 503-6722", hours: "Daily 11:30a–8p" },
+      { area: "Walking Downtown (0–1 Mile)", name: "505 Central Food Hall – Food Hall", price: "$ Varies", address: "505 Central Ave NW, Albuquerque, NM 87102", distance: "0.3 mi", phone: "Varies by Vendor", hours: "Usually 11a–9p" },
+      { area: "Walking Downtown (0–1 Mile)", name: "Slate Street Café – Café", price: "$$", address: "515 Slate Ave NW, Albuquerque, NM 87102", distance: "0.4 mi", phone: "(505) 243-2210", hours: "Mon–Fri 8a–2p, Sat 9a–2p" },
+      { area: "Beyond the Block (1–3 Miles)", name: "Tractor Brewing Company Wells Park – Brewery", price: "$$", address: "1800 4th St NW, Albuquerque, NM 87102", distance: "1.2 mi", phone: "(505) 243-6752", hours: "Mon 4–9p, Tue–Thu 2–10p, Fri 2–12a, Sat 1–11p, Sun 1–10p" },
+      { area: "Walking Downtown (0–1 Mile)", name: "Range Café Downtown – New Mexican", price: "$$", address: "320 Central Ave SE, Albuquerque, NM 87102", distance: "0.4 mi", phone: "(505) 243-1440", hours: "Daily 7a–3p" },
+      { area: "Walking Downtown (0–1 Mile)", name: "Founders Speakeasy – Basement Speakeasy", price: "$$", address: "622 Central Ave SW, Albuquerque, NM 87102", distance: "0.5 mi", phone: "(505) 582-2693", hours: "Tues–Sat 5p–2a, Sun–Mon 5p–12a" },
+      { area: "Walking Downtown (0–1 Mile)", name: "The Artichoke Café – American", price: "$$", address: "424 Central Ave SE, Albuquerque, NM 87102", distance: "0.5 mi", phone: "(505) 243-0200", hours: "Mon–Thu 11a–9p, Fri–Sat 11a–10p" },
+      { area: "Walking Downtown (0–1 Mile)", name: "Marble Brewery – Brewery", price: "$$", address: "111 Marble Ave NW, Albuquerque, NM 87102", distance: "0.5 mi", phone: "(505) 243-2739", hours: "Daily 11:30a–10p" },
+      { area: "Walking Downtown (0–1 Mile)", name: "Farina Pizzeria & Wine Bar", price: "$$", address: "510 Central Ave SE, Albuquerque, NM 87102", distance: "0.6 mi", phone: "(505) 243-0130", hours: "Mon–Sat 11a–9p" },
+      { area: "Walking Downtown (0–1 Mile)", name: "Cocina Azul – New Mexican", price: "$$", address: "1134 Mountain Rd NW, Albuquerque, NM 87104", distance: "0.7 mi", phone: "(505) 831-2500", hours: "Daily 9a–8p" },
+      { area: "Walking Downtown (0–1 Mile)", name: "Monroe’s – Classic New Mexican Breakfast", price: "$$", address: "1025 4th St NW, Albuquerque, NM 87102", distance: "0.7 mi", phone: "(505) 242-1111", hours: "Sun 9a–8p, Mon–Tue & Thu–Sat 10a–8p" },
 
-      // Short Drive to Old Town (1–3 mi)
-      { area: "Short Drive to Old Town", name: "Kosmos Restaurant & Astropub – American", address: "1715 5th St NW", distance: "1.2 mi", phone: "(505) 369-1772", hours: "Tue–Thu 11:30a–8p, Fri–Sat 11:30a–9p" },
-      { area: "Short Drive to Old Town", name: "Laguna Burger (Old Town) – Burgers", address: "2400 12th St NW", distance: "2.0 mi", phone: "(505) 352-8282", hours: "Daily 10:30a–8p" },
-      { area: "Short Drive to Old Town", name: "Indian Pueblo Kitchen – Native American", address: "2401 12th St NW", distance: "2.1 mi", phone: "(505) 724-3510", hours: "Wed–Sun 8a–3p" },
-      { area: "Short Drive to Old Town", name: "Monte Carlo Steakhouse – Steakhouse", address: "3916 Central Ave SW", distance: "2.2 mi", phone: "(505) 836-9886", hours: "Mon–Sat 11a–9p" },
-      { area: "Short Drive to Old Town", name: "66 Diner – Diner", address: "1405 Central Ave NE", distance: "2.3 mi", phone: "(505) 247-1421", hours: "Mon–Thu 11a–9p, Fri–Sat 11a–10p, Sun 11a–8p" },
-      { area: "Short Drive to Old Town", name: "Frontier Restaurant – Diner", address: "2400 Central Ave SE", distance: "2.5 mi", phone: "(505) 266-0550", hours: "Daily 5a–12p" },
-      { area: "Short Drive to Old Town", name: "Sawmill Market – Food Hall", address: "1909 Bellamah Ave NW", distance: "2.8 mi", phone: "(505) 498-2982", hours: "Sun–Thu 8a–9p, Fri–Sat 8a–10p" },
-      { area: "Short Drive to Old Town", name: "Annapurna’s Vegetarian Café – Vegetarian", address: "2201 Silver Ave SE", distance: "2.8 mi", phone: "(505) 262-2424", hours: "Daily 9a–8p" },
+      // Beyond the Block (1–3 Miles)
+      { area: "Beyond the Block (1–3 Miles)", name: "Kosmos Restaurant & Astropub – American", price: "$$", address: "1715 5th St NW, Albuquerque, NM 87102", distance: "1.2 mi", phone: "(505) 369-1772", hours: "Tue–Thu 11:30a–8p, Fri–Sat 11:30a–9p" },
+      { area: "Beyond the Block (1–3 Miles)", name: "Laguna Burger (Old Town) – Burgers", price: "$$", address: "2400 12th St NW, Albuquerque, NM 87104", distance: "2.0 mi", phone: "(505) 352-8282", hours: "Daily 10:30a–8p" },
+      { area: "Beyond the Block (1–3 Miles)", name: "Indian Pueblo Kitchen – Native American", price: "$$", address: "2401 12th St NW, Albuquerque, NM 87104", distance: "2.1 mi", phone: "(505) 724-3510", hours: "Wed–Sun 8a–3p" },
+      { area: "Beyond the Block (1–3 Miles)", name: "Monte Carlo Steakhouse – Steakhouse", price: "$$$", address: "3916 Central Ave SW, Albuquerque, NM 87105", distance: "2.2 mi", phone: "(505) 836-9886", hours: "Mon–Sat 11a–9p" },
+      { area: "Beyond the Block (1–3 Miles)", name: "66 Diner – Diner", price: "$$", address: "1405 Central Ave NE, Albuquerque, NM 87102", distance: "2.3 mi", phone: "(505) 247-1421", hours: "Mon–Thu 11a–9p, Fri–Sat 11a–10p, Sun 11a–8p" },
+      { area: "Beyond the Block (1–3 Miles)", name: "Frontier Restaurant – Diner", price: "$$", address: "2400 Central Ave SE, Albuquerque, NM 87106", distance: "2.5 mi", phone: "(505) 266-0550", hours: "Daily 5a–12a" },
+      { area: "Beyond the Block (1–3 Miles)", name: "Sawmill Market – Food Hall", price: "$ Varies", address: "1909 Bellamah Ave NW, Albuquerque, NM 87104", distance: "2.8 mi", phone: "(505) 498-2982", hours: "Sun–Thu 8a–9p, Fri–Sat 8a–10p" },
+      { area: "Beyond the Block (1–3 Miles)", name: "Annapurna’s Vegetarian Café – Vegetarian", price: "$$", address: "2201 Silver Ave SE, Albuquerque, NM 87106", distance: "2.8 mi", phone: "(505) 262-2424", hours: "Daily 9a–8p" },
 
-      // Quick Adventure (3–5 mi)
-      { area: "Quick Adventure", name: "M’tucci’s Bar Roma – Italian", address: "3222 Central Ave SE", distance: "3.3 mi", phone: "(505) 508-2745", hours: "Sun–Thu 11a–9p, Fri–Sat 11a–10p" },
-      { area: "Quick Adventure", name: "Guava Tree Café – Latin American", address: "118 Richmond Dr NE", distance: "3.0 mi", phone: "(505) 990-2599", hours: "Tue–Sat 11a–4p" },
-      { area: "Quick Adventure", name: "Tula’s Kitchen – American", address: "1825 Central Ave NW", distance: "4.0 mi", phone: "(505) 200-2666", hours: "Tue–Sun 9a–9p" },
-      { area: "Quick Adventure", name: "El Pinto Restaurant & Cantina – New Mexican", address: "10500 4th St NW", distance: "4.8 mi", phone: "(505) 898-1771", hours: "Daily 11a–9p" },
+      // Quick Adventure (3–5 Miles)
+      { area: "Quick Adventure (3–5 Miles)", name: "M’tucci’s Bar Roma – Italian", price: "$$$", address: "3222 Central Ave SE, Albuquerque, NM 87106", distance: "3.3 mi", phone: "(505) 508-2745", hours: "Sun–Thu 11a–9p, Fri–Sat 11a–10p" },
+      { area: "Quick Adventure (3–5 Miles)", name: "Guava Tree Café – Latin American", price: "$$", address: "118 Richmond Dr NE, Albuquerque, NM 87106", distance: "3.0 mi", phone: "(505) 990-2599", hours: "Tue–Sat 11a–4p" },
+      { area: "Quick Adventure (3–5 Miles)", name: "Tula’s Kitchen – American", price: "$$", address: "1825 Central Ave NW, Albuquerque, NM 87104", distance: "4.0 mi", phone: "(505) 200-2666", hours: "Tue–Sun 9a–9p" },
+      { area: "Quick Adventure (3–5 Miles)", name: "El Pinto Restaurant & Cantina – New Mexican", price: "$$", address: "10500 4th St NW, Albuquerque, NM 87114", distance: "4.8 mi", phone: "(505) 898-1771", hours: "Daily 11a–9p" },
 
-      // Worth the Drive (5+ mi)
-      { area: "Worth the Drive", name: "Farm & Table – Upscale Dining", address: "8917 4th St NW", distance: "5.0 mi", phone: "(505) 503-7124", hours: "Wed–Sat 5p–9p, Sun 9a–2p" },
-      { area: "Worth the Drive", name: "Sadie’s of New Mexico – New Mexican", address: "6230 4th St NW", distance: "5.5 mi", phone: "(505) 345-5339", hours: "Daily 11a–9p" },
-      { area: "Worth the Drive", name: "M’tucci’s – Italian", address: "4939 Pan American Fwy NE", distance: "6.0 mi", phone: "(505) 312-8519", hours: "Daily 11a–10p" },
-      { area: "Worth the Drive", name: "Los Poblanos Campo Restaurant – Farm Dining", address: "4803 Rio Grande Blvd NW", distance: "6.2 mi", phone: "(505) 344-9297", hours: "Wed–Sun 5p–9p, Brunch Sat–Sun 9a–2p" },
-      { area: "Worth the Drive", name: "Japanese Kitchen – Teppanyaki & Sushi", address: "6521 Americas Pkwy", distance: "6.2 mi", phone: "(505) 884-8937", hours: "Lunch Mon–Sat 11:30a–2:30p, Dinner Daily 5p–9p" },
-      { area: "Worth the Drive", name: "TEN3 at Sandia Peak Tram – Upscale Dining", address: "30 Tramway Rd NE", distance: "9.8 mi", phone: "(505) 856-6692", hours: "Mon–Thu 11a–9p, Fri–Sat 11a–9:30p, Sun 11a–8p" }
+      // Worth the Drive (5+ Miles)
+      { area: "Worth the Drive (5+ Miles)", name: "Farm & Table – Upscale Dining", price: "$$$", address: "8917 4th St NW, Albuquerque, NM 87114", distance: "5.0 mi", phone: "(505) 503-7124", hours: "Wed–Sat 5p–9p, Sun 9a–2p" },
+      { area: "Worth the Drive (5+ Miles)", name: "Sadie’s of New Mexico – New Mexican", price: "$$", address: "6230 4th St NW, Los Ranchos de Albuquerque, NM 87107", distance: "5.5 mi", phone: "(505) 345-5339", hours: "Daily 11a–9p" },
+      { area: "Worth the Drive (5+ Miles)", name: "Vernon’s Speakeasy – Upscale Speakeasy", price: "$$$$", address: "6855 4th St NW, Los Ranchos de Albuquerque, NM 87107", distance: "5.6 mi", phone: "(505) 341-0831", hours: "Wed–Fri & Sun 4p–10p, Sat 4p–10p, Closed Mon–Tue" },
+      { area: "Worth the Drive (5+ Miles)", name: "M’tucci’s – Italian (NE location)", price: "$$$", address: "4939 Pan American Fwy NE, Albuquerque, NM 87109", distance: "6.0 mi", phone: "(505) 312-8519", hours: "Daily 11a–10p" },
+      { area: "Worth the Drive (5+ Miles)", name: "Los Poblanos Campo Restaurant – Farm Dining", price: "$$$", address: "4803 Rio Grande Blvd NW, Albuquerque, NM 87107", distance: "6.2 mi", phone: "(505) 344-9297", hours: "Wed–Sun 5p–9p, Sat & Sun Brunch 9a–2p" },
+      { area: "Worth the Drive (5+ Miles)", name: "Japanese Kitchen – Teppanyaki & Sushi", price: "$$$", address: "6521 Americas Pkwy NE, Albuquerque, NM 87110", distance: "6.2 mi", phone: "(505) 884-8937", hours: "Lunch Mon–Sat 11:30a–2:30p, Dinner Daily 5p–9p" },
+      { area: "Worth the Drive (5+ Miles)", name: "TEN3 at Sandia Peak Tram – Upscale Dining", price: "$$$$", address: "30 Tramway Rd NE, Albuquerque, NM 87122", distance: "9.8 mi", phone: "(505) 856-6692", hours: "Mon–Thu 11a–9p, Fri–Sat 11a–9:30p, Sun 11a–8p" }
     ];
 
     // ===== Map Setup =====
@@ -134,8 +142,7 @@
       const key = cacheKey(addr);
       const cached = localStorage.getItem(key);
       if(cached){ try{return JSON.parse(cached)}catch(_){}}
-      const q = `${addr}, Albuquerque, NM`;
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`;
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}`;
       const resp = await fetch(url,{headers:{'Accept':'application/json'}});
       const data = await resp.json();
       const best = data && data[0] ? { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) } : null;
@@ -146,17 +153,20 @@
 
     function popupHtml(p){
       const digits = (p.phone||'').replace(/[^0-9]/g,'');
-      const phoneRow = p.phone ? (digits ? `<div class="row"><strong>Phone</strong><a href="tel:${digits}">${p.phone}</a></div>` : `<div class="row"><strong>Phone</strong>${p.phone}</div>`) : '';
-      const mapsQuery = encodeURIComponent(`${p.name} ${p.address} Albuquerque NM`);
+      const phoneVal = p.phone ? (digits ? `<a href="tel:${digits}">${p.phone}</a>` : `${p.phone}`) : '';
+      const mapsQuery = encodeURIComponent(`${p.name} ${p.address}`);
       const appleUrl = `https://maps.apple.com/?q=${mapsQuery}`;
       const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
       return `<div class="popup">
         <h4>${p.name}</h4>
         <div class="meta">${p.area} • ${p.distance}</div>
-        <div class="row"><strong>Address</strong>${p.address}</div>
-        ${phoneRow}
-        <div class="row"><strong>Hours</strong>${p.hours}</div>
-        <div class="btns" style="margin-top:6px">
+        ${p.price ? `<div class="badge">Price: ${p.price}</div>` : ''}
+        <dl class="kvs">
+          <dt>Address</dt><dd>${p.address||''}</dd>
+          ${phoneVal ? `<dt>Phone</dt><dd>${phoneVal}</dd>` : ''}
+          ${p.hours ? `<dt>Hours</dt><dd>${p.hours}</dd>` : ''}
+        </dl>
+        <div class="btns">
           <a class="btn" href="${appleUrl}" target="_blank" rel="noopener">Open in Apple Maps</a>
           <a class="btn" href="${gmapsUrl}" target="_blank" rel="noopener">Open in Google Maps</a>
         </div>
@@ -164,10 +174,10 @@
     }
 
     const groups = {
-      "Walking Downtown": L.layerGroup().addTo(map),
-      "Short Drive to Old Town": L.layerGroup().addTo(map),
-      "Quick Adventure": L.layerGroup().addTo(map),
-      "Worth the Drive": L.layerGroup().addTo(map)
+      "Walking Downtown (0–1 Mile)": L.layerGroup().addTo(map),
+      "Beyond the Block (1–3 Miles)": L.layerGroup().addTo(map),
+      "Quick Adventure (3–5 Miles)": L.layerGroup().addTo(map),
+      "Worth the Drive (5+ Miles)": L.layerGroup().addTo(map)
     };
 
     const markersByName = new Map();
@@ -201,7 +211,7 @@
         markersByName.set(p.name, m);
         bounds.extend([p.lat, p.lng]);
       }
-      map.fitBounds(bounds.pad(0.15));
+      if(FIT_TO_BOUNDS_ON_LOAD){ map.fitBounds(bounds.pad(0.15)); }
     }
 
     addPlaces();
