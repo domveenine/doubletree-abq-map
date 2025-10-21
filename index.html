@@ -40,7 +40,7 @@
   <div id="app">
     <header>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2c2.5 4.2 5.3 6.4 8.4 6.5-2.1 6.7-5.5 10.6-8.4 13-2.9-2.4-6.3-6.3-8.4-13C6.7 8.4 9.5 6.2 12 2Z" stroke="#0a84ff" stroke-width="1.2"/></svg>
-      <div class="title">Favorites Near DoubleTree</div>
+      <div class="title">ABQ Dining Near DoubleTree</div>
     </header>
 
     <div style="position:relative;">
@@ -54,7 +54,7 @@
           <div class="legend-row"><span class="chip" style="background:#d89ef9"></span> Worth the Drive (5+ Miles)</div>
           <div style="margin-top:8px">
             <select id="placeSelect" class="select">
-              <option value="">Jump to a Restaurant</option>
+              <option value="">Quick jump to a restaurant</option>
             </select>
           </div>
           <div class="btns" style="margin-top:8px">
@@ -88,7 +88,7 @@
       { area: "Walking Downtown (0–1 Mile)", name: "505 Central Food Hall – Food Hall", price: "$ Varies", address: "505 Central Ave NW, Albuquerque, NM 87102", distance: "0.3 mi", phone: "Varies by Vendor", hours: "Usually 11a–9p" },
       { area: "Walking Downtown (0–1 Mile)", name: "Slate Street Café – Café", price: "$$", address: "515 Slate Ave NW, Albuquerque, NM 87102", distance: "0.4 mi", phone: "(505) 243-2210", hours: "Mon–Fri 8a–2p, Sat 9a–2p" },
       { area: "Beyond the Block (1–3 Miles)", name: "Tractor Brewing Company Wells Park – Brewery", price: "$$", address: "1800 4th St NW, Albuquerque, NM 87102", distance: "1.2 mi", phone: "(505) 243-6752", hours: "Mon 4–9p, Tue–Thu 2–10p, Fri 2–12a, Sat 1–11p, Sun 1–10p" },
-      { area: "Beyond the Block (1–3 Miles)", name: "The Grove Cafe & Market", price: "$$", address: "600 Central Ave SE Unit A, Albuquerque, NM 87102", distance: "1.7 mi", phone: "(505) 248-9800", hours: "Tue–Sun 8a–2p" },
+      { area: "Beyond the Block (1–3 Miles)", name: "The Grove Cafe & Market", price: "$$", address: "600 Central Ave SE, Albuquerque, NM 87102", distance: "1.7 mi", phone: "(505) 248-9800", hours: "Tue–Sun 8a–2p" },
       { area: "Walking Downtown (0–1 Mile)", name: "Range Café Downtown – New Mexican", price: "$$", address: "320 Central Ave SE, Albuquerque, NM 87102", distance: "0.4 mi", phone: "(505) 243-1440", hours: "Daily 7a–3p" },
       { area: "Walking Downtown (0–1 Mile)", name: "Founders Speakeasy – Basement Speakeasy", price: "$$", address: "622 Central Ave SW, Albuquerque, NM 87102", distance: "0.5 mi", phone: "(505) 582-2693", hours: "Tues–Sat 5p–2a, Sun–Mon 5p–12a" },
       { area: "Walking Downtown (0–1 Mile)", name: "The Artichoke Café – American", price: "$$", address: "424 Central Ave SE, Albuquerque, NM 87102", distance: "0.5 mi", phone: "(505) 243-0200", hours: "Mon–Thu 11a–9p, Fri–Sat 11a–10p" },
@@ -140,17 +140,34 @@
     const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
     const cacheKey = addr => `geocode:${addr}`;
     async function geocode(addr){
-      const key = cacheKey(addr);
-      const cached = localStorage.getItem(key);
-      if(cached){ try{return JSON.parse(cached)}catch(_){}}
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}`;
-      const resp = await fetch(url,{headers:{'Accept':'application/json'}});
-      const data = await resp.json();
-      const best = data && data[0] ? { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) } : null;
-      if(best){ localStorage.setItem(key, JSON.stringify(best)); }
-      await sleep(250);
-      return best;
-    }
+  const key = cacheKey(addr);
+  const cached = localStorage.getItem(key);
+  if(cached){ try{return JSON.parse(cached)}catch(_){}}
+
+  async function lookup(q){
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(q);
+    const resp = await fetch(url,{headers:{'Accept':'application/json'}});
+    const data = await resp.json();
+    return data && data[0] ? { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) } : null;
+  }
+
+  // exact
+  let best = await lookup(addr);
+  // simplified without unit/suite
+  if(!best){
+    const simplified = addr.replace(/,?\s*(Unit|Suite|Ste|#)\s*[A-Za-z0-9-]+/i, '');
+    if(simplified !== addr) best = await lookup(simplified);
+  }
+  // name + city
+  if(!best){
+    const p = (PLACES||[]).find(x=>x.address===addr);
+    if(p) best = await lookup(p.name + ', Albuquerque, NM');
+  }
+
+  if(best){ localStorage.setItem(key, JSON.stringify(best)); }
+  await sleep(200);
+  return best;
+}
 
     function popupHtml(p){
       const digits = (p.phone||'').replace(/[^0-9]/g,'');
@@ -233,7 +250,8 @@
     });
 
     document.getElementById('placeSelect').addEventListener('change', (e)=>{
-      const m = markersByName.get(e.target.value); if(!m) return;
+      const m = markersByName.get(e.target.value);
+      if(!m){ alert('That place is still loading. Try again in a moment.'); return; }
       map.setView(m.getLatLng(), 16, { animate:true });
       m.openPopup();
       const orig = m.options.radius; let step = 0; const id = setInterval(()=>{
